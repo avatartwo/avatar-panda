@@ -1369,7 +1369,7 @@ void rr_do_end_record(void)
     time_t rr_end_time;
     time(&rr_end_time);
     printf("Time taken was: %ld seconds.\n", rr_end_time - rr_start_time);
-    printf("Checksum of guest memory: %#08x\n", rr_checksum_memory_internal());
+    //printf("Checksum of guest memory: %#08x\n", rr_checksum_memory_internal());
 
     // log_all_cpu_states();
 
@@ -1479,7 +1479,7 @@ void rr_do_end_replay(int is_error)
     printf("max_queue_len = %llu\n", rr_max_num_queue_entries);
     rr_max_num_queue_entries = 0;
 
-    printf("Checksum of guest memory: %#08x\n", rr_checksum_memory_internal());
+    //printf("Checksum of guest memory: %#08x\n", rr_checksum_memory_internal());
 
     // mz some more sanity checks - the queue should contain only the RR_LAST
     // element
