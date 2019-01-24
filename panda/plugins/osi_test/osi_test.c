@@ -15,9 +15,10 @@ PANDAENDCOMMENT */
 // the PRIx64 macro
 #define __STDC_FORMAT_MACROS
 
-// Choose a granularity for the OSI code to be invoked.
-// Comment out line below to generate output for each block.
-#define INVOKE_FREQ_PGD
+// Specify when the OSI test code is called.
+//    OSI_TEST_ON_ASID_CHANGED defined -> on context switches
+//    OSI_TEST_ON_ASID_CHANGED undefined -> for each executed block
+#define OSI_TEST_ON_ASID_CHANGED
 
 #include "panda/plugin.h"
 #include "osi/osi_types.h"
@@ -31,8 +32,6 @@ int before_block_exec(CPUState *cpu, TranslationBlock *tb);
 int after_block_exec(CPUState *cpu, TranslationBlock *tb);
 
 int before_block_exec(CPUState *cpu, TranslationBlock *tb) {
-    int i;
-
     OsiProc *current = get_current_process(cpu);
     if(current) {
         printf("Current process: %s PID:" TARGET_FMT_ld " PPID:" TARGET_FMT_ld "\n", current->pid > 0 ? current->name : "N/A", current->pid, current->ppid);
@@ -42,54 +41,58 @@ int before_block_exec(CPUState *cpu, TranslationBlock *tb) {
     
     printf("\n");
 
-    OsiProcs *ps = get_processes(cpu);
+    GArray *ps = get_processes(cpu);
     if (ps == NULL) {
         printf("Process list not available.\n");
     } else {
-        printf("Process list (%d procs):\n", ps->num);
-        for (i = 0; i < ps->num; i++)
-            printf("  %-16s\t" TARGET_FMT_ld "\t" TARGET_FMT_ld "\n", ps->proc[i].name, ps->proc[i].pid, ps->proc[i].ppid);
+        printf("Process list (%d procs):\n", ps->len);
+        for (int i = 0; i < ps->len; i++) {
+            OsiProc *p = &g_array_index(ps, OsiProc, i);
+            printf("  %-16s\t" TARGET_FMT_ld "\t" TARGET_FMT_ld "\n", p->name, p->pid, p->ppid);
+        }
     }
 
     printf("\n-------------------------------------------------\n\n");
 
     // Cleanup
     free_osiproc(current);
-    free_osiprocs(ps);
+    g_array_free(ps, true);
 
     return 0;
 }
 
 int after_block_exec(CPUState *cpu, TranslationBlock *tb) {
-    int i;
-
     OsiProc *current = get_current_process(cpu);
-    OsiModules *ms = get_libraries(cpu, current);
+    GArray *ms = get_libraries(cpu, current);
     if (ms == NULL) {
         printf("No mapped dynamic libraries.\n");
     } else {
-        printf("Dynamic libraries list (%d libs):\n", ms->num);
-        for (i = 0; i < ms->num; i++)
-            printf("\t0x" TARGET_FMT_lx "\t" TARGET_FMT_ld "\t%-24s %s\n", ms->module[i].base, ms->module[i].size, ms->module[i].name, ms->module[i].file);
+        printf("Dynamic libraries list (%d libs):\n", ms->len);
+        for (int i = 0; i < ms->len; i++) {
+            OsiModule *m = &g_array_index(ms, OsiModule, i);
+            printf("\t0x" TARGET_FMT_lx "\t" TARGET_FMT_ld "\t%-24s %s\n", m->base, m->size, m->name, m->file);
+        }
     }
 
     printf("\n");
 
-    OsiModules *kms = get_modules(cpu);
+    GArray *kms = get_modules(cpu);
     if (kms == NULL) {
         printf("No mapped kernel modules.\n");
     } else {
-        printf("Kernel module list (%d modules):\n", kms->num);
-        for (i = 0; i < kms->num; i++)
-            printf("\t0x" TARGET_FMT_lx "\t" TARGET_FMT_ld "\t%-24s %s\n", kms->module[i].base, kms->module[i].size, kms->module[i].name, kms->module[i].file);
+        printf("Kernel module list (%d modules):\n", kms->len);
+        for (int i = 0; i < kms->len; i++) {
+            OsiModule *km = &g_array_index(kms, OsiModule, i);
+            printf("\t0x" TARGET_FMT_lx "\t" TARGET_FMT_ld "\t%-24s %s\n", km->base, km->size, km->name, km->file);
+        }
     }
 
     printf("\n-------------------------------------------------\n\n");
 
     // Cleanup
     free_osiproc(current);
-    free_osimodules(ms);
-    free_osimodules(kms);
+    g_array_free(ms, true);
+    g_array_free(kms, true);
 
     return 0;
 }
@@ -102,7 +105,7 @@ int asid_changed(CPUState *cpu, target_ulong old_pgd, target_ulong new_pgd) {
 }
 
 bool init_plugin(void *self) {
-#if defined(INVOKE_FREQ_PGD)
+#if defined(OSI_TEST_ON_ASID_CHANGED)
     // relatively short execution
     // loaded library information will be for the previously running process
     panda_cb pcb = { .asid_changed = asid_changed };
